@@ -3,6 +3,7 @@ import authReducer from "../features/authSlice";
 import exchangeRatesReducer from "../features/exchangeRateSlice";
 import exchangeReducer from "../features/exchangeSlice";
 import transferReducer from '../features/transferSlice';
+
 // Load initial state from local storage
 const loadState = () => {
   try {

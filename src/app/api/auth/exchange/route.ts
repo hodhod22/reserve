@@ -1,40 +1,67 @@
-// app/api/auth/exchange/route.ts
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
 import dbConnect from "@/lib/dbConnect";
 import User from "@/app/models/User";
 import ExchangeRate from "@/app/models/ExchangeRate";
-import { authOptions } from "@/lib/auth";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+
+type Currency = "IRR" | "GBP" | "EUR" | "TRY" | "AED" | "SEK" | "USD";
 
 export async function POST(req: Request) {
   await dbConnect();
 
-  // Get the session
-  const session = await getServerSession(authOptions);
-  console.log("Session in /api/auth/exchange:", session);
+  const token = req.headers.get("Authorization")?.split(" ")[1];
 
-  // Check if session.user.email is defined
-  if (!session?.user?.email) {
+  if (!token) {
     return NextResponse.json({ message: "Not Authenticated" }, { status: 401 });
   }
 
-  const { fromCurrency, toCurrency, amount } = await req.json();
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET!);
+  } catch (error) {
+    console.error("Invalid token:", error);
+    return NextResponse.json({ message: "Invalid token" }, { status: 401 });
+  }
 
-  // Find the user by email
-  const user = await User.findOne({ email: session.user.email });
+  const userId = decoded.userId;
+
+  const user = await User.findById(userId);
   if (!user) {
     return NextResponse.json({ message: "User not found" }, { status: 404 });
   }
 
-  // Check if the user has sufficient balance
-  if (user.balance[fromCurrency as keyof typeof user.balance] < amount) {
+  const { fromCurrency, toCurrency, amount } = await req.json();
+
+  const validCurrencies: Currency[] = ["IRR", "GBP", "EUR", "TRY", "AED", "SEK", "USD"];
+  if (!validCurrencies.includes(fromCurrency as Currency)) {
     return NextResponse.json(
-      { message: "Insufficient Balance" },
+      { message: `Invalid fromCurrency: ${fromCurrency}` },
+      { status: 400 }
+    );
+  }
+  if (!validCurrencies.includes(toCurrency as Currency)) {
+    return NextResponse.json(
+      { message: `Invalid toCurrency: ${toCurrency}` },
       { status: 400 }
     );
   }
 
-  // Fetch the latest exchange rates
+  // Convert Decimal128 to number
+  const fromBalance = parseFloat(user.balance[fromCurrency as Currency].toString());
+  const toBalance = parseFloat(user.balance[toCurrency as Currency].toString());
+
+  console.log("From Balance:", fromBalance);
+  console.log("Amount:", amount);
+  console.log("To Balance:", toBalance);
+
+  if (fromBalance < amount) {
+    return NextResponse.json(
+      { message: "Insufficient balance" },
+      { status: 400 }
+    );
+  }
+
   const exchangeRates = await ExchangeRate.findOne().sort({ timestamp: -1 });
   if (!exchangeRates) {
     return NextResponse.json(
@@ -43,44 +70,18 @@ export async function POST(req: Request) {
     );
   }
 
-  // Calculate the converted amount
-  const rate =
-    exchangeRates.rates[toCurrency] / exchangeRates.rates[fromCurrency];
+  const rate = parseFloat(exchangeRates.rates[toCurrency as Currency].toString()) /
+               parseFloat(exchangeRates.rates[fromCurrency as Currency].toString());
   const convertedAmount = amount * rate;
-  if (!user) {
-    return NextResponse.json({ message: "User not found" }, { status: 404 });
-  }
 
-  if (!user.balance) {
-    return NextResponse.json(
-      { message: "User balance not found" },
-      { status: 400 }
-    );
-  }
-  type Currency = keyof typeof user.balance;
+  // Update the balance using Decimal128
+  user.balance[fromCurrency as Currency] = new mongoose.Types.Decimal128((fromBalance - amount).toString());
+  user.balance[toCurrency as Currency] = new mongoose.Types.Decimal128((toBalance + convertedAmount).toString());
 
-  const isCurrency = (currency: string): currency is Currency => {
-    return Object.keys(user.balance).includes(currency);
-  };
-if (!isCurrency(fromCurrency) || !isCurrency(toCurrency)) {
-  return NextResponse.json({ message: "Invalid currency" }, { status: 400 });
-}
-
-if (user.balance[fromCurrency] < amount) {
-  return NextResponse.json(
-    { message: "Insufficient Balance" },
-    { status: 400 }
-  );
-}
-
-user.balance[fromCurrency] -= amount;
-user.balance[toCurrency] += convertedAmount;
-
-  // Save the updated user
   await user.save();
 
   return NextResponse.json({
-    message: "Exchange Successful",
+    message: "Exchange successful",
     fromCurrency,
     toCurrency,
     amount,

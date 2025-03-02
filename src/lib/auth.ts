@@ -1,15 +1,15 @@
+import { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import NextAuth, { AuthOptions } from "next-auth";
-import UserModel from "@/app/models/User";
+import User from "@/app/models/User";
 import dbConnect from "@/lib/dbConnect";
 import bcrypt from "bcryptjs";
-import { DefaultUser } from "next-auth";
-import jwt from "jsonwebtoken";
-interface CustomUser extends DefaultUser {
+import mongoose from "mongoose";
+
+export interface CustomUser {
   id: string;
   name: string;
   email: string;
-  role: "user" | "admin";
+  role: string;
   balance: {
     IRR: number;
     GBP: number;
@@ -20,6 +20,7 @@ interface CustomUser extends DefaultUser {
     USD: number;
   };
 }
+
 export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
@@ -30,83 +31,58 @@ export const authOptions: AuthOptions = {
       },
       async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) return null;
-
+       
+  
         await dbConnect();
-        const user = await UserModel.findOne({ email: credentials.email });
+        const user = await User.findOne({ email: credentials?.email });
+        if (!user) return null;
+        const isMatch = await bcrypt.compare(credentials!.password, user.password);
+        if (!isMatch) return null;
 
-        if (!user) {
-          throw new Error("Invalid email or password");
-        }
+        // Convert Decimal128 balance values to numbers for the session
+        const balance = {
+          IRR: parseFloat(user.balance.IRR.toString()),
+          GBP: parseFloat(user.balance.GBP.toString()),
+          EUR: parseFloat(user.balance.EUR.toString()),
+          TRY: parseFloat(user.balance.TRY.toString()),
+          AED: parseFloat(user.balance.AED.toString()),
+          SEK: parseFloat(user.balance.SEK.toString()),
+          USD: parseFloat(user.balance.USD.toString()),
+        };
 
-        const isMatch = await bcrypt.compare(
-          credentials.password,
-          user.password
-        );
-        if (!isMatch) {
-          throw new Error("Invalid email or password");
-        }
-
-        // Explicitly type the returned user object
-        const customUser: CustomUser = {
+        // Return a user object that matches the expected type
+        return {
           id: user._id!.toString(),
           name: user.username,
           email: user.email,
-          role: user.role as "user" | "admin", // Ensure role is typed correctly
-          balance: user.balance,
+          role: user.role,
+          balance,
         };
-
-        return customUser;
       },
     }),
   ],
-  pages: {
-    signIn: "/login",
-  },
   session: {
     strategy: "jwt",
   },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id ?? "";
-        token.role = user.role ?? "user";
-        token.balance = user.balance ?? {
-          IRR: 0,
-          GBP: 0,
-          EUR: 0,
-          TRY: 0,
-          AED: 0,
-          SEK: 0,
-          USD: 0,
-        };
-        token.accessToken =  jwt.sign(
-          { id: user.id, email: user.email },
-          process.env.JWT_SECRET!, // Use a secret key from environment variables
-          { expiresIn: "1h" } // Set an expiration time
-        );
+        token.id = user.id;
+        token.email = user.email;
+        token.role = user.role;
+        token.balance = (user as CustomUser).balance;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.email = token.email as string;
         session.user.role = token.role as "user" | "admin";
-        session.user.balance = token.balance ?? {
-          IRR: 0,
-          GBP: 0,
-          EUR: 0,
-          TRY: 0,
-          AED: 0,
-          SEK: 0,
-          USD: 0,
-        };
-        session.accessToken = token.accessToken as string; // Add the accessToken to the session
+        session.user.balance = token.balance as CustomUser["balance"];
       }
       return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
-
-const handler = NextAuth(authOptions);
-export { handler as GET, handler as POST };

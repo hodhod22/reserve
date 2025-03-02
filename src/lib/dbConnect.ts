@@ -11,6 +11,7 @@ if (!MONGODB_URI) {
 // Inline type declaration for the global object
 declare global {
   var mongoose: {
+    Types: any;
     conn: Mongoose | null;
     promise: Promise<Mongoose> | null;
   };

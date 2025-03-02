@@ -8,13 +8,13 @@ export interface IUser extends Document {
   role: string;
   accountNumber: string;
   balance: {
-    IRR: number;
-    GBP: number;
-    EUR: number;
-    TRY: number;
-    AED: number;
-    SEK: number;
-    USD: number;
+    IRR: mongoose.Types.Decimal128;
+    GBP: mongoose.Types.Decimal128;
+    EUR: mongoose.Types.Decimal128;
+    TRY: mongoose.Types.Decimal128;
+    AED: mongoose.Types.Decimal128;
+    SEK: mongoose.Types.Decimal128;
+    USD: mongoose.Types.Decimal128;
   };
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
@@ -26,13 +26,13 @@ const userSchema: Schema = new mongoose.Schema({
   role: { type: String, default: "user", enum: ["user", "admin"] },
   accountNumber: { type: String, unique: true },
   balance: {
-    IRR: { type: Number, default: 0 },
-    GBP: { type: Number, default: 0 },
-    EUR: { type: Number, default: 0 },
-    TRY: { type: Number, default: 0 },
-    AED: { type: Number, default: 0 },
-    SEK: { type: Number, default: 0 },
-    USD: { type: Number, default: 0 },
+    IRR: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+    GBP: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+    EUR: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+    TRY: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+    AED: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+    SEK: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+    USD: { type: mongoose.Schema.Types.Decimal128, default: 0 },
   },
 });
 

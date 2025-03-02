@@ -1,18 +1,17 @@
 "use client";
-import { useSession } from "next-auth/react";
-import { useState, useEffect } from "react";
-import { useDispatch, useSelector } from "react-redux";
+
+import { useState } from "react";
 import { exchangeCurrency } from "@/app/features/exchangeSlice";
 import { RootState } from "@/app/store/store";
+import { useDispatch, useSelector } from "react-redux";
+ import { useAppDispatch, useAppSelector } from "../hooks/exchange-hook";
 
 
 const ExchangeForm = () => {
-   const { data: session } = useSession(); // Get the session
-  const dispatch = useDispatch<any>();
-  const { user, loading: authLoading } = useSelector(
-    (state: RootState) => state.auth
-  );
-  const { loading, success, error } = useSelector(
+  
+  const dispatch = useAppDispatch();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const { loading, success, error } = useAppSelector(
     (state: RootState) => state.exchange
   );
 
@@ -20,43 +19,45 @@ const ExchangeForm = () => {
   const [toCurrency, setToCurrency] = useState("EUR");
   const [amount, setAmount] = useState(0);
 
-  // Log the user balance for debugging
-  useEffect(() => {
-    console.log("User balance:", user?.balance);
-  }, [user]);
-
   const handleExchange = async () => {
-    if (amount > 0) {
-      try {
-        const response = await fetch("/api/auth/exchange", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.accessToken}`, // Include the session token
-          },
-          body: JSON.stringify({ fromCurrency, toCurrency, amount }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Exchange failed");
-        }
-
-        const data = await response.json();
-        dispatch(exchangeCurrency(data)); // Dispatch the result to Redux
-      } catch (error) {
-        console.error(error);
-        alert("Exchange failed");
-      }
-    } else {
+    if (amount <= 0) {
       alert("Please enter a valid amount");
+      return;
+    }
+
+    // Retrieve the token from localStorage
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      alert("You must be logged in to perform this action");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/auth/exchange", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`, // Include the token
+        },
+        body: JSON.stringify({ fromCurrency, toCurrency, amount }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Exchange failed");
+      }
+
+      const data = await response.json();
+      console.log("Exchange Response:", data);
+
+      dispatch(exchangeCurrency(data)); // Dispatch the result to Redux
+      alert("Exchange successful!");
+    } catch (error) {
+      console.error("Exchange Error:", error);
+      alert(error instanceof Error ? error.message : "Exchange failed");
     }
   };
-
-
-  // Show loading state if user data is not yet available
-  if (authLoading || !user) {
-    return <div>Loading...</div>;
-  }
 
   return (
     <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-6">
@@ -73,7 +74,7 @@ const ExchangeForm = () => {
           value={fromCurrency}
           onChange={(e) => setFromCurrency(e.target.value)}
         >
-          {Object.keys(user.balance).map((currency) => (
+          {Object.keys(user?.balance || {}).map((currency) => (
             <option key={currency} value={currency}>
               {currency}
             </option>
@@ -90,7 +91,7 @@ const ExchangeForm = () => {
           value={toCurrency}
           onChange={(e) => setToCurrency(e.target.value)}
         >
-          {Object.keys(user.balance).map((currency) => (
+          {Object.keys(user?.balance || {}).map((currency) => (
             <option key={currency} value={currency}>
               {currency}
             </option>
@@ -130,3 +131,4 @@ const ExchangeForm = () => {
 };
 
 export default ExchangeForm;
+
